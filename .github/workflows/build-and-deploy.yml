@@ -133,7 +133,7 @@ jobs:
         uses: git-for-windows/setup-git-for-windows-sdk@v1
         with:
           flavor: ${{ env.PACKAGE_TO_BUILD == 'mingw-w64-git' && 'build-installers' || 'full' }}
-          architecture: ${{ env.ARCHITECTURE || 'x86_64' }}
+          architecture: ${{ env.ARCHITECTURE || 'aarch64' }}
           msys: ${{ env.REPO == 'MSYS2-packages' || env.PACKAGE_TO_BUILD == 'git-for-windows-keyring' }}
 
       - name: Clone ${{ env.REPO }}
@@ -210,7 +210,7 @@ jobs:
           } &&
 
           cd "/usr/src/$REPO/$PACKAGE_TO_BUILD" &&
-          MAKEFLAGS=-j6 PKGEXT='.pkg.tar.xz' MINGW_ARCH="mingw32 mingw64" $MAKEPKG -s --noconfirm &&
+          MAKEFLAGS=-j6 PKGEXT='.pkg.tar.xz' MINGW_ARCH="clangarm64 mingw32 mingw64" $MAKEPKG -s --noconfirm &&
           cp *.pkg.tar* "$dir/" &&
 
           MAKEFLAGS=-j6 SRCEXT='.src.tar.gz' MINGW_ARCH=mingw64 $MAKEPKG --allsource &&
