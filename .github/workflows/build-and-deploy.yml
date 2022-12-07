@@ -1,39 +1,20 @@
 name: build-and-deploy
-run-name: Build${{ inputs.build_only == '' && ' and deploy' || '' }} ${{ !startsWith(inputs.package, 'mingw-w64-') && inputs.repo != 'MSYS2-packages' && inputs.package != 'git-extra' && inputs.package != 'git-for-windows-keyring' && 'mingw-w64-' || '' }}${{ inputs.package }}${{ inputs.architecture && ' (${{ inputs.architecture }})' || '' }}
+run-name: Build mingw-w64-openssl
 
 on:
-  workflow_dispatch:
-    inputs:
-      package:
-        description: 'The package to build'
-        required: true
-      build_only:
-        description: 'Skip deployment (if non-empty)'
-        required: false
-      repo:
-        description: 'The repo containing the package definition'
-        required: true
-      ref:
-        description: 'The ref containing the package definition'
-        required: true
-      architecture:
-        description: 'The architecture to build for (only for MSYS packages)'
-        required: false
-      actor:
-        description: The GitHub user on whose behalf this workflow is run
-        required: false
+  push:
 
 env:
-  PACKAGE_TO_BUILD: "${{ github.event.inputs.package }}"
-  BUILD_ONLY: "${{ github.event.inputs.build_only }}"
+  PACKAGE_TO_BUILD: mingw-w64-openssl
+  BUILD_ONLY: true
   OWNER: "git-for-windows"
-  REPO: "${{ github.event.inputs.repo }}"
-  REF: "${{ github.event.inputs.ref }}"
-  ARCHITECTURE: "${{ github.event.inputs.architecture }}"
+  REPO: MINGW-packages
+  REF: 3d4ce7321d1571673f4568901476be8a91046eb9
+  ARCHITECTURE:
   GPG_OPTIONS: "--batch --yes --no-tty --list-options no-show-photos --verify-options no-show-photos --pinentry-mode loopback"
   HOME: "${{ github.workspace }}\\home"
   ACTOR: "${{ github.event.inputs.actor || github.triggering_actor }}"
-  CREATE_CHECK_RUN: true
+  CREATE_CHECK_RUN: false
 
 jobs:
   build:
