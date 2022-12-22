@@ -1,6 +1,7 @@
 name: create-azure-self-hosted-runners
 
 on:
+  workflow_dispatch:
   push:
 
 env:
