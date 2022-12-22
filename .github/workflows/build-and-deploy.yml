@@ -1,5 +1,5 @@
 name: build-and-deploy
-run-name: Build${{ inputs.build_only == '' && ' and deploy' || '' }} ${{ !startsWith(inputs.package, 'mingw-w64-') && inputs.repo != 'MSYS2-packages' && inputs.package != 'git-extra' && inputs.package != 'git-for-windows-keyring' && 'mingw-w64-' || '' }}${{ inputs.package }}${{ inputs.architecture && ' (${{ inputs.architecture }})' || '' }}
+run-name: Build${{ inputs.build_only == '' && ' and deploy' || '' }} ${{ !startsWith(inputs.package, 'mingw-w64-') && inputs.repo != 'MSYS2-packages' && inputs.package != 'git-extra' && inputs.package != 'git-for-windows-keyring' && 'mingw-w64-' || '' }}${{ inputs.package }}${{ inputs.architecture && format(' ({0})', inputs.architecture) || '' }}
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ on:
         description: 'The ref containing the package definition'
         required: true
       architecture:
-        description: 'The architecture to build for (only for MSYS packages)'
+        description: 'The architecture to build for (only for MSYS packages and all arm64 builds)'
         required: false
       actor:
         description: The GitHub user on whose behalf this workflow is run
@@ -37,7 +37,7 @@ env:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ${{ github.event.inputs.architecture == 'aarch64' && fromJSON('["Windows", "ARM64"]') || 'windows-latest' }}
     steps:
       - uses: actions/checkout@v3
 
@@ -135,6 +135,8 @@ jobs:
           flavor: ${{ env.PACKAGE_TO_BUILD == 'mingw-w64-git' && 'build-installers' || 'full' }}
           architecture: ${{ env.ARCHITECTURE || 'x86_64' }}
           msys: ${{ env.REPO == 'MSYS2-packages' || env.PACKAGE_TO_BUILD == 'git-for-windows-keyring' }}
+          # We only have to clean up on self-hosted runners
+          cleanup: ${{ runner.arch == 'ARM64' && true || false }}
 
       - name: Clone ${{ env.REPO }}
         shell: bash
@@ -153,6 +155,35 @@ jobs:
       - name: pacman -Syyu
         shell: bash
         run: pacman -Syyu --noconfirm
+
+      - name: rebase `.dll` base addresses
+        if: env.ARCHITECTURE == 'i686' && !contains('msys2-runtime gnupg', env.PACKAGE_TO_BUILD)
+        shell: powershell
+        run: |
+          cd C:\git-sdk-32-full
+          if (!$?) { exit(1); }
+
+          $env:MSYSTEM = "MINGW32"
+          $env:PATH = "$(Get-Location)\usr\bin;" + $env:PATH
+          $env:MSYS2_PATH_TYPE = "minimal"
+
+          # Disable pacman's post-transaction hook that would mess everything up, if it exists
+          sh.exe -lc "set -x && rm -f /usr/share/libalpm/hooks/rebase.hook"
+
+          sh.exe -lc "set -x && find /usr/lib/perl5/*_perl -name \*.dll >perl-dlls.txt"
+          type perl-dlls.txt
+          dash -x /usr/bin/rebaseall -p -T perl-dlls.txt
+
+          # Work around for:
+          # - address space needed by 'Cwd.dll' is already occupied
+          # - address space needed by 'Dumper.dll' is already occupied
+          # etc
+          bash -lc "set -x && rebase -b 0x61500000 /usr/lib/perl5/core_perl/auto/*/{*,*/*}.dll"
+          # Work around for:
+          # - address space needed by 'Cwd.dll' is already occupied
+          bash -lc "set -x && rebase -v -b 0x63f00000 /usr/lib/perl5/core_perl/auto/Cwd/Cwd.dll"
+          # verify the base address
+          bash -lc "set -x && rebase -v -i /usr/lib/perl5/core_perl/auto/Cwd/Cwd.dll"
 
       - name: Get GPG key(s)
         shell: bash
@@ -209,8 +240,10 @@ jobs:
             printf '#!/bin/sh\n\nexec /mingw64/bin/git.exe "$@"\n' >/usr/bin/git
           } &&
 
+          MINGW_ARCHS_TO_BUILD=$(test "$ARCHITECTURE" == "aarch64" && echo "clangarm64" || echo "mingw32 mingw64")
+
           cd "/usr/src/$REPO/$PACKAGE_TO_BUILD" &&
-          MAKEFLAGS=-j6 PKGEXT='.pkg.tar.xz' MINGW_ARCH="mingw32 mingw64" $MAKEPKG -s --noconfirm &&
+          MAKEFLAGS=-j6 PKGEXT='.pkg.tar.xz' MINGW_ARCH=$MINGW_ARCHS_TO_BUILD $MAKEPKG -s --noconfirm &&
           cp *.pkg.tar* "$dir/" &&
 
           MAKEFLAGS=-j6 SRCEXT='.src.tar.gz' MINGW_ARCH=mingw64 $MAKEPKG --allsource &&
