@@ -12,7 +12,6 @@ env:
   REF: 3cda9eb70cca0e7e8de3d8c3e0076eb68e6c39d3
   ARCHITECTURE: aarch64
   GPG_OPTIONS: "--batch --yes --no-tty --list-options no-show-photos --verify-options no-show-photos --pinentry-mode loopback"
-  HOME: "${{ runner.temp }}\\home"
   ACTOR: dscho
   CREATE_CHECK_RUN: false
 
@@ -98,6 +97,8 @@ jobs:
         run: |
           USER_NAME="${{ steps.actor.outputs.name }}" &&
           USER_EMAIL="${{ steps.actor.outputs.email }}" &&
+          HOME="${{ runner.temp }}\\home" &&
+          echo "HOME=$HOME" >>$GITHUB_ENV &&
           mkdir -p "$HOME" &&
           git config --global user.name "$USER_NAME" &&
           git config --global user.email "$USER_EMAIL" &&
