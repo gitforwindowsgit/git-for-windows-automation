@@ -1,0 +1,313 @@
+name: git-artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_only:
+        description: 'Optionally restrict what artifacts to build (portable, installer, etc.). Separate artifacts with spaces'
+        required: false
+      ref:
+        description: 'Optionally override which branch to build'
+        required: false
+        default: main
+      repository:
+        description: 'Optionally override from where to fetch the specified ref'
+        required: false
+        default: git-for-windows/git
+      architecture:
+        type: choice
+        description: 'Architecture to build'
+        required: true
+        options: 
+        - x86_64
+        - i686
+
+env:
+  GPG_OPTIONS: "--batch --yes --no-tty --list-options no-show-photos --verify-options no-show-photos --pinentry-mode loopback"
+  HOME: "${{github.workspace}}\\home"
+  USERPROFILE: "${{github.workspace}}\\home"
+  BUILD_ONLY: "${{github.event.inputs.build_only}}"
+  REPOSITORY: "${{github.event.inputs.repository}}"
+  REF: "${{github.event.inputs.ref}}"
+  ARCHITECTURE: "${{github.event.inputs.architecture}}"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  bundle-artifacts:
+    runs-on: windows-latest
+    outputs:
+      msystem: ${{steps.configure-environment.outputs.MSYSTEM}}
+      mingw_prefix: ${{steps.configure-environment.outputs.MINGW_PREFIX}}
+      bitness: ${{steps.configure-environment.outputs.BITNESS}}
+      git_version: ${{steps.generate-bundle-artifacts.outputs.GIT_VERSION}}
+    steps:
+      - name: Configure environment
+        id: configure-environment
+        run: |
+          case "$ARCHITECTURE" in
+            x86_64)
+              MSYSTEM=MINGW64
+              MINGW_PREFIX="/mingw64"
+              BITNESS=64
+              ;;
+            i686)
+              MSYSTEM=MINGW32
+              MINGW_PREFIX="/mingw32"
+              BITNESS=32
+              ;;
+            *)
+              echo "Unhandled architecture: $ARCHITECTURE"
+              exit 1
+              ;;
+          esac
+          echo "MSYSTEM=$MSYSTEM" >> $GITHUB_ENV
+          echo "MSYSTEM=$MSYSTEM" >> $GITHUB_OUTPUT
+          echo "MINGW_PREFIX=$MINGW_PREFIX" >> $GITHUB_ENV
+          echo "MINGW_PREFIX=$MINGW_PREFIX" >> $GITHUB_OUTPUT
+          echo "BITNESS=$BITNESS" >> $GITHUB_OUTPUT
+      - name: Configure user
+        run:
+          USER_NAME="${{github.actor}}" &&
+          USER_EMAIL="${{github.actor}}@users.noreply.github.com" &&
+          mkdir "$HOME" &&
+          git config --global user.name "$USER_NAME" &&
+          git config --global user.email "$USER_EMAIL" &&
+          echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >> $GITHUB_ENV
+      - uses: git-for-windows/setup-git-for-windows-sdk@v1
+        with:
+          flavor: build-installers
+          architecture: ${{env.architecture}}
+      - name: Clone build-extra
+        run: |
+          d=/usr/src/build-extra &&
+          if test ! -d $d/.git
+          then
+            git clone --single-branch -b main https://github.com/git-for-windows/build-extra $d
+          else
+            git -C $d fetch https://github.com/git-for-windows/build-extra main &&
+            git -C $d switch -C main FETCH_HEAD
+          fi
+      - name: Prepare home directory for GPG signing
+        if: env.GPGKEY != ''
+        run: |
+          echo '${{secrets.PRIVGPGKEY}}' | tr % '\n' | gpg $GPG_OPTIONS --import &&
+          mkdir -p home &&
+          git config --global gpg.program "/usr/src/build-extra/gnupg-with-gpgkey.sh" &&
+          info="$(gpg --list-keys --with-colons "${GPGKEY%% *}" | cut -d : -f 1,10 | sed -n '/^uid/{s|uid:||p;q}')" &&
+          git config --global user.name "${info% <*}" &&
+          git config --global user.email "<${info#*<}"
+        env:
+          GPGKEY: ${{secrets.GPGKEY}}
+      - name: Generate bundle artifacts
+        env:
+          GPGKEY: ${{secrets.GPGKEY}}
+        id: generate-bundle-artifacts
+        run: |
+          printf '#!/bin/sh\n\nexec $MINGW_PREFIX/bin/git.exe "$@"\n' >/usr/bin/git &&
+          mkdir -p bundle-artifacts &&
+          git -c init.defaultBranch=main init --bare &&
+          git remote add -f origin https://github.com/git-for-windows/git &&
+          git fetch "https://github.com/$REPOSITORY" "$REF:$REF" &&
+          tag_name="$(git describe --match 'v[0-9]*' FETCH_HEAD)" &&
+          echo "GIT_VERSION=$tag_name" >> $GITHUB_OUTPUT &&
+          echo "prerelease-${tag_name#v}" >bundle-artifacts/ver &&
+          echo "${tag_name#v}" >bundle-artifacts/display_version &&
+          echo "$tag_name" >bundle-artifacts/next_version &&
+          git tag $(test -z "$GPGKEY" || echo " -s") -m "Snapshot build" "$tag_name" FETCH_HEAD &&
+          git bundle create bundle-artifacts/git.bundle origin/main.."$tag_name" &&
+          sh -x /usr/src/build-extra/please.sh mention feature "Snapshot of $(git show -s  --pretty='tformat:%h (%s, %ad)' --date=short FETCH_HEAD)" &&
+          git -C /usr/src/build-extra bundle create "$PWD/bundle-artifacts/build-extra.bundle" origin/main..main
+      - name: 'Publish Pipeline Artifact: bundle-artifacts'
+        uses: actions/upload-artifact@v3
+        with:
+          name: bundle-artifacts
+          path: bundle-artifacts
+  pkg:
+    runs-on: windows-latest
+    needs: bundle-artifacts
+    outputs:
+      artifact_matrix: ${{steps.artifact-build-matrix.outputs.matrix}}
+    env:
+      MSYSTEM: ${{ needs.bundle-artifacts.outputs.msystem }}
+      MINGW_PREFIX: ${{ needs.bundle-artifacts.outputs.mingw_prefix }}
+      MSVC_FOLDER_SUFFIX: ${{ github.event.inputs.architecture == 'x86_64' && '/amd64' || '' }}
+      GIT_VERSION: ${{ needs.bundle-artifacts.outputs.git_version }}
+    steps:
+      - name: Configure user
+        run:
+          USER_NAME="${{github.actor}}" &&
+          USER_EMAIL="${{github.actor}}@users.noreply.github.com" &&
+          mkdir "$HOME" &&
+          git config --global user.name "$USER_NAME" &&
+          git config --global user.email "$USER_EMAIL" &&
+          echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >> $GITHUB_ENV
+      - uses: git-for-windows/setup-git-for-windows-sdk@v1
+        with:
+          flavor: build-installers
+          architecture: ${{env.architecture}}
+      - name: Download bundle-artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: bundle-artifacts
+          path: bundle-artifacts
+      - name: Clone and update build-extra
+        run: |
+          d=/usr/src/build-extra &&
+          if test ! -d $d/.git
+          then
+            git clone --single-branch -b main https://github.com/git-for-windows/build-extra $d
+          else
+            git -C $d fetch https://github.com/git-for-windows/build-extra main &&
+            git -C $d switch -C main FETCH_HEAD
+          fi &&
+          git -C $d pull "$PWD"/bundle-artifacts/build-extra.bundle main
+      - name: Check out git/git
+        shell: bash
+        run: |
+          git -c init.defaultBranch=main init &&
+          git remote add -f origin https://github.com/git-for-windows/git &&
+          git fetch --tags bundle-artifacts/git.bundle $(cat bundle-artifacts/next_version) &&
+          git reset --hard $(cat bundle-artifacts/next_version)
+      - name: Prepare home directory for code-signing
+        env:
+          CODESIGN_P12: ${{secrets.CODESIGN_P12}}
+          CODESIGN_PASS: ${{secrets.CODESIGN_PASS}}
+        if: env.CODESIGN_P12 != '' && env.CODESIGN_PASS != ''
+        run: |
+          cd home &&
+          mkdir -p .sig &&
+          echo -n "$CODESIGN_P12" | tr % '\n' | base64 -d >.sig/codesign.p12 &&
+          echo -n "$CODESIGN_PASS" >.sig/codesign.pass
+          git config --global alias.signtool '!sh "/usr/src/build-extra/signtool.sh"'
+      - name: Prepare home directory for GPG signing
+        if: env.GPGKEY != ''
+        run: |
+          echo '${{secrets.PRIVGPGKEY}}' | tr % '\n' | gpg $GPG_OPTIONS --import &&
+          info="$(gpg --list-keys --with-colons "${GPGKEY%% *}" | cut -d : -f 1,10 | sed -n '/^uid/{s|uid:||p;q}')" &&
+          git config --global user.name "${info% <*}" &&
+          git config --global user.email "<${info#*<}"
+        env:
+          GPGKEY: ${{secrets.GPGKEY}}
+      - name: Cache mingw-w64-${{env.ARCHITECTURE}}-git
+        id: cache-git-pkg
+        uses: actions/cache@v3
+        with:
+          path: artifacts
+          key: pkg-${{env.GIT_VERSION}}-${{env.ARCHITECTURE}}
+      - name: Build mingw-w64-${{env.ARCHITECTURE}}-git
+        if: steps.cache-git-pkg.outputs.cache-hit != 'true'
+        env:
+          GPGKEY: "${{secrets.GPGKEY}}"
+        run: |
+          set -x
+          # Make sure that there is a `/usr/bin/git` that can be used by `makepkg-mingw`
+          printf '#!/bin/sh\n\nexec $MINGW_PREFIX/bin/git.exe "$@"\n' >/usr/bin/git &&
+          # Restrict `PATH` to MSYS2 and to Visual Studio (to let `cv2pdb` find the relevant DLLs)
+          PATH="$MINGW_PREFIX/bin:/usr/bin:/c/Program Files/Microsoft Visual Studio/2022/Enterprise/Common7/IDE/:/C/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin$MSVC_FOLDER_SUFFIX:/C/Windows/system32"
+          type -p mspdb140.dll || exit 1
+          sh -x /usr/src/build-extra/please.sh build-mingw-w64-git --only-$ARCHITECTURE --build-src-pkg -o artifacts HEAD &&
+          cp bundle-artifacts/ver artifacts/ &&
+          if test -n "$GPGKEY"
+          then
+            for tar in artifacts/*.tar*
+            do
+              /usr/src/build-extra/gnupg-with-gpgkey.sh --detach-sign --no-armor $tar
+            done
+          fi &&
+          b=$PWD/artifacts &&
+          version=$(cat bundle-artifacts/next_version) &&
+          (cd /usr/src/MINGW-packages/mingw-w64-git &&
+          cp PKGBUILD.$version PKGBUILD &&
+          git commit -s -m "mingw-w64-git: new version ($version)" PKGBUILD &&
+          git bundle create "$b"/MINGW-packages.bundle origin/main..main)
+      - name: Publish mingw-w64-${{env.ARCHITECTURE}}-git
+        uses: actions/upload-artifact@v3
+        with:
+          name: pkg-${{env.ARCHITECTURE}}
+          path: artifacts
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 16
+      - uses: actions/checkout@v3
+        with:
+          path: automation-scripts
+          clean: false
+      - name: Prepare artifact build matrix
+        id: artifact-build-matrix
+        run: |
+          ARTIFACTS=$(test -n "$BUILD_ONLY" && echo $BUILD_ONLY || echo "installer portable archive mingit mingit-busybox")
+          MATRIX=$(node ./automation-scripts/create-artifacts-matrix.js $ARTIFACTS)
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "Will be using the following matrix: $MATRIX"
+  artifacts:
+    runs-on: windows-latest
+    needs: [bundle-artifacts, pkg]
+    env:
+      MSYSTEM: ${{ needs.bundle-artifacts.outputs.msystem }}
+      BITNESS: ${{ needs.bundle-artifacts.outputs.bitness }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.pkg.outputs.artifact_matrix) }}
+    steps:
+      - name: Download pkg-${{env.ARCHITECTURE}}
+        uses: actions/download-artifact@v3
+        with:
+          name: pkg-${{env.ARCHITECTURE}}
+          path: pkg-${{env.ARCHITECTURE}}
+      - name: Download bundle-artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: bundle-artifacts
+          path: bundle-artifacts
+      - uses: git-for-windows/setup-git-for-windows-sdk@v1
+        with:
+          flavor: build-installers
+          architecture: ${{env.ARCHITECTURE}}
+      - name: Clone and update build-extra
+        run: |
+          d=/usr/src/build-extra &&
+          if test ! -d $d/.git
+          then
+            git clone --single-branch -b main https://github.com/git-for-windows/build-extra $d
+          else
+            git -C $d fetch https://github.com/git-for-windows/build-extra main &&
+            git -C $d switch -C main FETCH_HEAD
+          fi &&
+          git -C $d pull "$PWD"/bundle-artifacts/build-extra.bundle main
+      - name: Prepare home directory for code-signing
+        env:
+          CODESIGN_P12: ${{secrets.CODESIGN_P12}}
+          CODESIGN_PASS: ${{secrets.CODESIGN_PASS}}
+        if: (matrix.artifact.name == 'installer' || matrix.artifact.name == 'portable') && env.CODESIGN_P12 != '' && env.CODESIGN_PASS != ''
+        run: |
+          mkdir -p home/.sig &&
+          echo -n "$CODESIGN_P12" | tr % '\n' | base64 -d >home/.sig/codesign.p12 &&
+          echo -n "$CODESIGN_PASS" >home/.sig/codesign.pass &&
+          git config --global alias.signtool '!sh "/usr/src/build-extra/signtool.sh"'
+      - name: Build ${{env.ARCHITECTURE}} ${{matrix.artifact.name}}
+        run: |
+          set -x
+          eval /usr/src/build-extra/please.sh make_installers_from_mingw_w64_git --version=$(cat pkg-${{env.ARCHITECTURE}}/ver) -o artifacts --${{matrix.artifact.name}} --pkg=pkg-${{env.ARCHITECTURE}}/mingw-w64-${{env.ARCHITECTURE}}-git-[0-9]*.tar.xz --pkg=pkg-${{env.ARCHITECTURE}}/mingw-w64-${{env.ARCHITECTURE}}-git-doc-html-[0-9]*.tar.xz &&
+          if test portable = '${{matrix.artifact.name}}' && test -n "$(git config alias.signtool)"
+          then
+            git signtool artifacts/PortableGit-*.exe
+          fi &&
+          openssl dgst -sha256 artifacts/${{matrix.artifact.fileprefix}}-*.${{matrix.artifact.fileextension}} | sed "s/.* //" >artifacts/sha-256.txt
+      - name: Copy package-versions and pdbs
+        if: matrix.artifact.name == 'installer'
+        run: |
+          cp /usr/src/build-extra/installer/package-versions.txt artifacts/ &&
+          a=$PWD/artifacts &&
+          p=$PWD/pkg-${{env.ARCHITECTURE}} &&
+          (cd /usr/src/build-extra &&
+          mkdir -p cached-source-packages &&
+          cp "$p"/*-pdb* cached-source-packages/ &&
+          GIT_CONFIG_PARAMETERS="'windows.sdk${{env.BITNESS}}.path='" ./please.sh bundle_pdbs --arch=${{env.ARCHITECTURE}} --directory="$a" installer/package-versions.txt)
+      - name: Publish ${{matrix.artifact.name}}-${{env.ARCHITECTURE}}
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{matrix.artifact.name}}-${{env.ARCHITECTURE}}
+          path: artifacts
