@@ -197,14 +197,15 @@ jobs:
         with:
           path: artifacts
           key: pkg-${{env.GIT_VERSION}}-${{env.ARCHITECTURE}}
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
+      #- name: Setup tmate session
+      #  uses: mxschmitt/action-tmate@v3
       - name: Build mingw-w64-${{env.ARCHITECTURE}}-git
         if: steps.cache-git-pkg.outputs.cache-hit != 'true'
         env:
           GPGKEY: "${{secrets.GPGKEY}}"
         run: |
           set -x
+          echo $PATH && echo $MINGW_PREFIX && echo $MSYSTEM && which makepkg-mingw &&
           /usr/src/build-extra/please.sh build-mingw-w64-git --only-$ARCHITECTURE --build-src-pkg -o artifacts HEAD &&
           cp bundle-artifacts/ver artifacts/ &&
           if test -n "$GPGKEY"
