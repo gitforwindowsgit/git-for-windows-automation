@@ -197,6 +197,8 @@ jobs:
         with:
           path: artifacts
           key: pkg-${{env.GIT_VERSION}}-${{env.ARCHITECTURE}}
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
       - name: Build mingw-w64-${{env.ARCHITECTURE}}-git
         if: steps.cache-git-pkg.outputs.cache-hit != 'true'
         env:
