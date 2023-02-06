@@ -130,13 +130,11 @@ jobs:
           fi
 
       - name: Download Git for Windows SDK
-        uses: git-for-windows/setup-git-for-windows-sdk@v1
+        uses: git-for-windows/setup-git-for-windows-sdk@7e1ade6cbcd3050464d705a5e11c6478bdf296d1
         with:
           flavor: ${{ env.PACKAGE_TO_BUILD == 'mingw-w64-git' && 'build-installers' || 'full' }}
           architecture: ${{ env.ARCHITECTURE || 'x86_64' }}
           msys: ${{ env.REPO == 'MSYS2-packages' || env.PACKAGE_TO_BUILD == 'git-for-windows-keyring' }}
-          # We only have to clean up on self-hosted runners
-          cleanup: ${{ runner.arch == 'ARM64' && true || false }}
 
       - name: Clone ${{ env.REPO }}
         shell: bash
@@ -245,9 +243,6 @@ jobs:
           cd "/usr/src/$REPO/$PACKAGE_TO_BUILD" &&
           MAKEFLAGS=-j6 PKGEXT='.pkg.tar.xz' MINGW_ARCH=$MINGW_ARCHS_TO_BUILD $MAKEPKG -s --noconfirm &&
           cp *.pkg.tar* "$dir/" &&
-
-          MAKEFLAGS=-j6 SRCEXT='.src.tar.gz' MINGW_ARCH=mingw64 $MAKEPKG --allsource &&
-          cp *.src.tar* "$dir/" &&
 
           # Ensure that the Git worktree is still clean
           ls -la &&
