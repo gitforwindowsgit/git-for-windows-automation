@@ -92,7 +92,7 @@ jobs:
           git config --global user.name "$USER_NAME" &&
           git config --global user.email "$USER_EMAIL" &&
           echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >> $GITHUB_ENV
-      - uses: git-for-windows/setup-git-for-windows-sdk@v1
+      - uses: git-for-windows/setup-git-for-windows-sdk@2b33cbfa8607485abb94e968c5a9654aac0dfa84
         with:
           flavor: build-installers
           architecture: ${{env.architecture}}
@@ -220,7 +220,7 @@ jobs:
         with:
           name: bundle-artifacts
           path: bundle-artifacts
-      - uses: git-for-windows/setup-git-for-windows-sdk@v1
+      - uses: git-for-windows/setup-git-for-windows-sdk@2b33cbfa8607485abb94e968c5a9654aac0dfa84
         with:
           flavor: build-installers
           architecture: ${{env.ARCHITECTURE}}
