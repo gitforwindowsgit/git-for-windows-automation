@@ -22,6 +22,34 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: reuse artifact
+        shell: bash
+        run: |
+          run_id=4111902435 &&
+          name=artifacts &&
+
+          curl -L https://api.github.com/repos/${{github.repository}}/actions/runs/$run_id/artifacts |
+          sed -n '/^    {/{        # start of item
+            :1
+            N                      # read next line
+            /\n    }/{             # end of item
+              # if the item has the intended name, print it as well as the URL
+              s/.*"name": "\('$name'\)".*"archive_download_url": "\([^"]*\).*/\1 \2/p
+              # theoretically the `name` and `archive_download_url` could be displayed in reverse order
+              s/.*"archive_download_url": "\([^"]*\).*"name": "\('$name'\)".*/\1 \2/p
+              b                    # the item was handled
+            }
+            b1                     # keep reading until end of item
+          }' |
+          while read name url
+          do
+            echo "$name"
+            curl -H "Authorization: token ${{secrets.GITHUB_TOKEN}}" \
+              -#sLo /tmp/"$name".zip "$url" &&
+            mkdir "$name" &&
+            unzip -q -d "$name" /tmp/"$name".zip
+          done
+
       - name: Download Git for Windows SDK
         uses: git-for-windows/setup-git-for-windows-sdk@6697295a149f95f97cb98aff3c2316cf264f7b80
         with:
@@ -33,24 +61,6 @@ jobs:
         if: env.REPO != 'build-extra'
         shell: bash
         run: git clone --depth 1 --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
-
-      - name: reuse artifact
-        shell: bash
-        run: |
-          run_id=4111902435 &&
-          name=artifacts &&
-
-          curl -L https://api.github.com/repos/${{github.repository}}/actions/runs/$run_id/artifacts |
-          jq -r '.artifacts[] | select(.name | test("'$name'")) | [.name, .archive_download_url] | @tsv' |
-          tr -d '\r' |
-          while read name url
-          do
-            echo "$name"
-            curl -H "Authorization: token ${{secrets.GITHUB_TOKEN}}" \
-              -#sLo /tmp/"$name".zip "$url" &&
-            mkdir "$name" &&
-            unzip -q -d "$name" /tmp/"$name".zip
-          done
 
       - name: ${{ env.BUILD_ONLY == 'true' && 'Test-deploy' || 'Deploy' }} Pacman packages
         if: env.BUILD_ONLY == 'true' || env.AZURE_BLOBS_TOKEN != ''
