@@ -1,26 +1,14 @@
 name: Upgrade a package version and open a PR
-run-name: Upgrade ${{ inputs.package }} to ${{ inputs.version }}
+run-name: DEBUG
 
 on:
-  workflow_dispatch:
-    inputs:
-      package:
-        description: The package to update
-        type: string
-        required: true
-      version:
-        description: The new version of the package
-        type: string
-        required: true
-      actor:
-        description: The GitHub user on whose behalf this workflow is run
-        required: false
+  push:
 
 env:
-  PACKAGE_TO_UPGRADE: ${{ github.event.inputs.package }}
-  UPGRADE_TO_VERSION: ${{ github.event.inputs.version }}
+  PACKAGE_TO_UPGRADE: curl
+  UPGRADE_TO_VERSION: 7.88.1
   OWNER: 'git-for-windows'
-  ACTOR: "${{ github.event.inputs.actor || github.triggering_actor }}"
+  ACTOR: rimrul
 
 jobs:
   open-pr:
@@ -80,7 +68,7 @@ jobs:
         run: |
           git clone --bare --depth=1 --single-branch --branch=main --filter=blob:none \
             https://github.com/git-for-windows/git-sdk-64 .tmp &&
-          echo "rev=$(git -C .tmp rev-parse HEAD)" >>$GITHUB_OUTPUT
+          echo "rev=$(git -C .tmp rev-parse HEAD)+base64" >>$GITHUB_OUTPUT
       - name: restore cached git-sdk-64 subset
         id: restore-g4w-sdk
         uses: actions/cache/restore@v3
@@ -207,6 +195,50 @@ jobs:
           echo "::add-mask::$auth" &&
           cd "/usr/src/$REPO/$PACKAGE_TO_UPGRADE" &&
           git -c http.extraHeader="Authorization: Basic $auth" push --force origin HEAD:refs/heads/$PACKAGE_TO_UPGRADE-$UPGRADE_TO_VERSION
+      - name: debug using tmate
+        if: failure()
+        shell: bash
+        env:
+          ACTOR_LOGIN: '${{ steps.actor.outputs.login }}'
+          ACTOR_TOKEN: '${{ steps.setup.outputs.token }}'
+        run: |
+          (
+            cd / &&
+            G4W=/c/Program\ Files/Git &&
+            cp -n "$G4W"/usr/bin/{ssh-keygen.exe,msys-crypto-1.1.dll,msys-z.dll} usr/bin/ &&
+
+            CURL="$G4W"/mingw64/bin/curl.exe &&
+            "$CURL" -Lo /tmp/tmate.tar.zst https://repo.msys2.org/msys/x86_64/tmate-2.4.0-1-x86_64.pkg.tar.zst &&
+            tar xvf /tmp/tmate.tar.zst usr/bin/tmate.exe &&
+            "$CURL" -Lo /tmp/libevent.tar.zst https://repo.msys2.org/msys/x86_64/libevent-2.1.12-2-x86_64.pkg.tar.zst &&
+            tar xvf /tmp/libevent.tar.zst usr/bin/msys-event-2-1-7.dll &&
+            "$CURL" -Lo /tmp/msgpack-c.tar.zst https://repo.msys2.org/msys/x86_64/msgpack-c-4.0.0-1-x86_64.pkg.tar.zst &&
+            tar xvf /tmp/msgpack-c.tar.zst usr/bin/msys-msgpackc-2.dll &&
+            "$CURL" -Lo /tmp/libssh.tar.zst https://repo.msys2.org/msys/x86_64/libssh-0.9.6-1-x86_64.pkg.tar.zst &&
+            tar xvf /tmp/libssh.tar.zst usr/bin/msys-ssh-4.dll
+          ) &&
+
+          # restrict SSH access to the "actor", i.e. the GitHub user who triggered this workflow
+          # this requires calling `ssh -i <private-key> [...]` later on
+          mkdir -p ~/.ssh &&
+          curl -H 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+            https://api.github.com/users/${{github.actor}}/keys |
+          jq -r '.[].key' >~/.ssh/authorized_keys &&
+
+          # Generate an SSH key (needed for tmate)
+          echo -e 'y\n' | ssh-keygen -q -t rsa -N '' -f ~/.ssh/id_rsa &&
+
+          # Start tmate session
+          export CHERE_INVOKING=1 &&
+          tmate -S /tmp/tmate.sock -a ~/.ssh/authorized_keys new-session -d &&
+          tmate -S /tmp/tmate.sock wait tmate-ready &&
+
+          # Print SSH invocation every 5 seconds, until tmate session has terminated
+          while test -e /tmp/tmate.sock
+          do
+            tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}'
+            sleep 5
+          done
       - name: open PR
         if: steps.update.outputs.modified == 'true'
         uses: actions/github-script@v6
