@@ -5,7 +5,7 @@ on:
   push:
 
 env:
-  PACKAGE_TO_UPGRADE: curl
+  PACKAGE_TO_UPGRADE: mingw-w64-curl
   UPGRADE_TO_VERSION: 7.88.1
   OWNER: 'git-for-windows'
   ACTOR: rimrul
