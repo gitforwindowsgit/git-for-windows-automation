@@ -1,0 +1,158 @@
+name: Fix Pacman repositories after msys2-runtime-3.3 was deployed
+
+on:
+  push:
+    branches:
+      - fix-pacman-repositories-after-msys2-runtime-3.3-deployment
+  workflow_dispatch:
+
+jobs:
+  fix-things-and-stuff:
+    runs-on: windows-latest
+    steps:
+      - name: initialize bare SDK clone
+        id: clone-g4w-sdk
+        shell: bash
+        run: |
+          git clone --bare --depth=1 --single-branch --branch=main --filter=blob:none \
+            https://github.com/git-for-windows/git-sdk-64 .tmp &&
+          echo "rev=$(git -C .tmp rev-parse HEAD)-9" >>$GITHUB_OUTPUT
+      - name: restore cached git-sdk-64 subset
+        id: restore-g4w-sdk
+        uses: actions/cache/restore@v3
+        env:
+          cache-name: cache-g4w-sdk
+        with:
+          path: .sdk
+          key: g4w-sdk-${{ steps.clone-g4w-sdk.outputs.rev }}
+      - name: check out git-sdk-64 subset
+        if: ${{ steps.restore-g4w-sdk.outputs.cache-hit != 'true' }}
+        shell: bash
+        env:
+          GIT_CONFIG_PARAMETERS: "'checkout.workers=56'"
+        run: |
+          git -C .tmp config extensions.worktreeConfig true &&
+          git -C .tmp worktree add --no-checkout --detach "$PWD/.sdk" &&
+          cd .sdk &&
+          git config --worktree core.sparseCheckout true &&
+          git config --worktree core.bare false &&
+          sparse="$(git rev-parse --git-path info/sparse-checkout)" &&
+          mkdir -p "${sparse%/*}" &&
+          git show HEAD:.sparse/minimal-sdk >"$sparse" &&
+          cat >>"$sparse" <<-EOF &&
+          /etc/makepkg.conf
+          /usr/bin/base64.exe
+          /usr/bin/gettext.exe
+          /usr/bin/makepkg
+          /usr/bin/nproc.exe
+          /usr/bin/pacman.exe
+          /usr/bin/repo-add
+          /usr/bin/repo-remove
+          /usr/bin/sha256sum.exe
+          /usr/bin/updpkgsums
+          /usr/bin/bsdtar.exe
+          /usr/bin/msys-bz2-1.dll
+          /usr/bin/msys-iconv-2.dll
+          /usr/bin/msys-expat-1.dll
+          /usr/bin/msys-crypto-1.1.dll
+          /usr/bin/msys-lzma-5.dll
+          /usr/bin/msys-2.0.dll
+          /usr/bin/msys-lz4-1.dll
+          /usr/bin/msys-zstd-1.dll
+          /usr/bin/msys-z.dll
+          /usr/bin/xz.exe
+          /usr/bin/msys-intl-8.dll
+          /usr/bin/gpg.exe
+          /usr/bin/msys-gcrypt-20.dll
+          /usr/bin/msys-gpg-error-0.dll
+          /usr/bin/msys-assuan-0.dll
+          /usr/bin/msys-sqlite3-0.dll
+          /usr/bin/gpg-agent.exe
+          /usr/bin/msys-npth-0.dll
+          /usr/bin/dirmngr.exe
+          /usr/bin/msys-ksba-8.dll
+          /usr/bin/msys-gnutls-30.dll
+          /usr/bin/msys-hogweed-6.dll
+          /usr/bin/msys-idn2-0.dll
+          /usr/bin/msys-nettle-8.dll
+          /usr/bin/msys-p11-kit-0.dll
+          /usr/bin/msys-tasn1-6.dll
+          /usr/bin/msys-unistring-5.dll
+          /usr/bin/msys-ffi-8.dll
+          /usr/bin/gpg-connect-agent.exe
+          /usr/bin/cygwin-console-helper.exe
+          /usr/bin/md5sum.exe
+          /usr/share/makepkg/
+          /usr/ssl/certs/ca-bundle.crt
+          /mingw64/bin/curl.exe
+          EOF
+          git checkout --
+      - name: cache git-sdk-64 subset
+        if: ${{ steps.restore-g4w-sdk.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v3
+        env:
+          cache-name: cache-g4w-sdk
+        with:
+          path: .sdk
+          key: g4w-sdk-${{ steps.clone-g4w-sdk.outputs.rev }}
+      - name: use git-sdk-64 subset
+        shell: bash
+        run: |
+          cd .sdk &&
+
+          # allow `gpg-agent` to work as intended
+          mkdir -p dev/shm
+
+          # add the SDK directories to the `PATH`
+          cygpath -aw "usr/bin/core_perl" >>$GITHUB_PATH &&
+          cygpath -aw "usr/bin" >>$GITHUB_PATH &&
+          cygpath -aw "mingw64/bin" >>$GITHUB_PATH &&
+          echo "MSYSTEM=MINGW64" >>$GITHUB_ENV
+      - name: clone build-extra
+        uses: actions/checkout@v3
+        with:
+          repository: git-for-windows/build-extra
+          ref: 701c6302d172010b25e414bcb49f12e90bc275a7
+          path: .sdk/usr/src/build-extra
+      - name: Prepare home directory for GPG signing
+        if: env.GPGKEY != ''
+        shell: bash
+        run: |
+          echo '${{secrets.PRIVGPGKEY}}' | tr % '\n' | gpg $GPG_OPTIONS --import &&
+          mkdir -p "$HOME" &&
+          git config --global gpg.program "/usr/src/build-extra/gnupg-with-gpgkey.sh" &&
+          info="$(gpg --list-keys --with-colons "${GPGKEY%% *}" | cut -d : -f 1,10 | sed -n '/^uid/{s|uid:||p;q}')" &&
+          git config --global user.name "${info% <*}" &&
+          git config --global user.email "<${info#*<}"
+          echo "PACKAGER=$info" >>$GITHUB_ENV
+        env:
+          GPGKEY: ${{secrets.GPGKEY}}
+          GPG_OPTIONS: "--batch --yes --no-tty --list-options no-show-photos --verify-options no-show-photos --pinentry-mode loopback"
+      - name: re-deploy msys2-runtime and msys2-runtime-3.3
+        shell: bash
+        env:
+          GPGKEY: ${{secrets.GPGKEY}}
+          azure_blobs_token: ${{secrets.AZURE_BLOBS_TOKEN}}
+        run: |
+          set -ex
+          base_url=https://wingit.blob.core.windows.net
+          for base in \
+            msys2-runtime-3.3-3.3.6-1 \
+            msys2-runtime-3.3-devel-3.3.6-1 \
+            msys2-runtime-3.3.6-4 \
+            msys2-runtime-devel-3.3.6-4
+          do
+            curl -LO $base_url/x86-64/$base-x86_64.pkg.tar.xz
+            curl -LO $base_url/x86-64/$base-x86_64.pkg.tar.xz.sig
+            curl -LO $base_url/i686/$base-i686.pkg.tar.xz
+            curl -LO $base_url/i686/$base-i686.pkg.tar.xz.sig
+          done
+          ls -la
+
+          sed -i \
+            -e '687s,.*,echo "arch: $arch" \&\& tar tvf git-for-windows.db.tar.xz >/tmp/a1 \&\& & tar tvf git-for-windows.db.tar.xz >/tmp/a2 \&\& { git diff --no-index /tmp/a[12]; true; } \&\&,' \
+            -e '697s,.*,echo "arch: $arch" \&\& tar tvf git-for-windows.db.tar.xz >/tmp/a1 \&\& & tar tvf git-for-windows.db.tar.xz >/tmp/a2 \&\& { git diff --no-index /tmp/a[12]; true; } \&\&,' \
+            /usr/src/build-extra/pacman-helper.sh
+          sed -i 's,rm -r,echo i686; tar tvf "$dir"/i686/git-for-windows.db | grep msys2-runtime; echo x86_64; tar tvf "$dir"/x86*/git-for-windows.db | grep msys2-runtime; echo,' /usr/src/build-extra/pacman-helper.sh
+          git -C /usr/src/build-extra diff
+          sh /usr/src/build-extra/pacman-helper.sh quick_add msys2-*
