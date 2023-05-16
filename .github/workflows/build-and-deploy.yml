@@ -135,7 +135,13 @@ jobs:
       - name: Clone build-extra (unless cloned already)
         if: env.REPO != 'build-extra'
         shell: bash
-        run: git clone --depth 1 --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
+        run: |
+          rm -rf /usr/src/build-extra &&
+          git clone --depth 1 --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra || {
+            sleep 30 &&
+            rm -rf /usr/src/build-extra &&
+            git clone --depth 1 --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
+          }
 
       - name: pacman -Syyu
         shell: bash
