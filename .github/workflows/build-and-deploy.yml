@@ -1,42 +1,23 @@
 name: build-and-deploy
-run-name: Build${{ inputs.build_only == '' && ' and deploy' || '' }} ${{ !startsWith(inputs.package, 'mingw-w64-') && inputs.repo != 'MSYS2-packages' && inputs.package != 'git-extra' && inputs.package != 'git-for-windows-keyring' && 'mingw-w64-' || '' }}${{ inputs.package }}${{ inputs.architecture && format(' ({0})', inputs.architecture) || '' }}
+run-name: DEBUG missing signatures
 
 on:
-  workflow_dispatch:
-    inputs:
-      package:
-        description: 'The package to build'
-        required: true
-      build_only:
-        description: 'Skip deployment (if non-empty)'
-        required: false
-      repo:
-        description: 'The repo containing the package definition'
-        required: true
-      ref:
-        description: 'The ref containing the package definition'
-        required: true
-      architecture:
-        description: 'The architecture to build for (only for MSYS packages and all arm64 builds)'
-        required: false
-      actor:
-        description: The GitHub user on whose behalf this workflow is run
-        required: false
+  push:
 
 env:
-  PACKAGE_TO_BUILD: "${{ github.event.inputs.package }}"
-  BUILD_ONLY: "${{ github.event.inputs.build_only }}"
+  PACKAGE_TO_BUILD: "msys2-runtime"
+  BUILD_ONLY: "true"
   OWNER: "git-for-windows"
-  REPO: "${{ github.event.inputs.repo }}"
-  REF: "${{ github.event.inputs.ref }}"
-  ARCHITECTURE: "${{ github.event.inputs.architecture }}"
+  REPO: "MSYS2-packages"
+  REF: "d81a17c0eb1e96eac234605a6f4a8d60f14787c8"
+  ARCHITECTURE: "x86_64"
   GPG_OPTIONS: "--batch --yes --no-tty --list-options no-show-photos --verify-options no-show-photos --pinentry-mode loopback"
-  ACTOR: "${{ github.event.inputs.actor || github.triggering_actor }}"
-  CREATE_CHECK_RUN: true
+  ACTOR: "dscho"
+  CREATE_CHECK_RUN: false
 
 jobs:
   build:
-    runs-on: ${{ github.event.inputs.architecture == 'aarch64' && fromJSON('["Windows", "ARM64"]') || 'windows-latest' }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
 
@@ -70,7 +51,7 @@ jobs:
             const githubApiRequest = require('./github-api-request')
             const answer = await githubApiRequest(
               console,
-              '${{ steps.setup.outputs.token }}',
+              '${{ secrets.GITHUB_TOKEN }}',
               'GET',
               `/users/${process.env.ACTOR}`
             )
@@ -261,6 +242,32 @@ jobs:
             git diff
             exit 1
           fi
+
+      - name: debug with tmate
+        shell: bash
+        run: |
+          # install tmate
+          pacman -Sy --noconfirm tmate openssh &&
+
+          # restrict SSH access to the "actor", i.e. the GitHub user who triggered this workflow
+          # this requires calling `ssh -i <private-key> [...]` later on
+          mkdir -p ~/.ssh &&
+          echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDSXs87cLXHuXPXjPTyb3HTDizuD07CytsUgjXazbkfzD7/EZF5g6cRWnc+gbqApQCzGSbLXxCd+AV/UxyS62v34kO/k5olz6DF6aMURbvFqrB9v0px86T0ScYjehUf5NYzGixIIghW3Pdxqi6s8BRuNuUjTGsNDzlMLA8N9pK1TOBZglsRlBUdtg7zeXBN/gkS7tf44eAw7gxMNfhrb1ackEveeu7PDUEvkoHSfMFITBgd8z4PonoxZjWrijoQXxXKuD1GtWrvfev1yc6hGnLlRK8HCnnq87eYUd5iUVO2yWNBhVkySJMp66UuHKne7uROXslIhUT98cgDU04T/ZpZ2qwQqpsl0ohDC8rqiLSeAFNZQZdjwVAXtH+FIQLT8fyHaU8HsHD4exMPUHSaKIRL0kBbPS8Wxj1qh/F3lNPPtIxEmlbpVN56xSUkFGqBJRET4FIH+UpDiQE7nsaD4rl3iys7Aj0B2gFMttOOvq8J/dFOMqX+NEyiMAHVsFT0SBnKZfk5J96kWOANbJa753QC/01G8wiMKTU6M87Ziv3mB/FqIu97+78TYhEzdAOr3V7NZp/ccx6LoD7zvcDkKCaWD9PxPX2hcv70fZ/WsZ6wrkVEmBHs3vJ7lM+caTR8ndjt9wC5ceRfI1s55wZ8AZ9PJ2PVxpm9ZYDsgsiQXIwAFQ== x' >~/.ssh/authorized_keys &&
+
+          # Generate an SSH key (needed for tmate)
+          echo -e 'y\n' | ssh-keygen -q -t rsa -N '' -f ~/.ssh/id_rsa &&
+
+          # Start tmate session
+          export CHERE_INVOKING=1 &&
+          tmate -S /tmp/tmate.sock -a ~/.ssh/authorized_keys new-session -d &&
+          tmate -S /tmp/tmate.sock wait tmate-ready &&
+
+          # Print SSH invocation every 5 seconds, until tmate session has terminated
+          while test -e /tmp/tmate.sock
+          do
+            tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}'
+            sleep 5
+          done
 
       - name: update check-run
         if: env.CREATE_CHECK_RUN != 'false'
