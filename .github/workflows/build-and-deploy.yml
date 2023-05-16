@@ -9,7 +9,7 @@ env:
   BUILD_ONLY: "true"
   OWNER: "git-for-windows"
   REPO: "MSYS2-packages"
-  REF: "d81a17c0eb1e96eac234605a6f4a8d60f14787c8"
+  REF: "0fd53a92069da7cd4d6dbe3bbed5a3a76afa3d51"
   ARCHITECTURE: "x86_64"
   GPG_OPTIONS: "--batch --yes --no-tty --list-options no-show-photos --verify-options no-show-photos --pinentry-mode loopback"
   ACTOR: "dscho"
