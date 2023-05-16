@@ -97,7 +97,19 @@ jobs:
         shell: bash
         run: |
           # install tmate
-          pacman -Sy --noconfirm tmate openssh &&
+          (
+            cd / &&
+
+            CURL=/mingw64/bin/curl.exe &&
+            "$CURL" -Lo /tmp/tmate.tar.zst https://repo.msys2.org/msys/x86_64/tmate-2.4.0-1-x86_64.pkg.tar.zst &&
+            tar xvf /tmp/tmate.tar.zst usr/bin/tmate.exe &&
+            "$CURL" -Lo /tmp/libevent.tar.zst https://repo.msys2.org/msys/x86_64/libevent-2.1.12-2-x86_64.pkg.tar.zst &&
+            tar xvf /tmp/libevent.tar.zst usr/bin/msys-event-2-1-7.dll &&
+            "$CURL" -Lo /tmp/msgpack-c.tar.zst https://repo.msys2.org/msys/x86_64/msgpack-c-4.0.0-1-x86_64.pkg.tar.zst &&
+            tar xvf /tmp/msgpack-c.tar.zst usr/bin/msys-msgpackc-2.dll &&
+            "$CURL" -Lo /tmp/libssh.tar.zst https://repo.msys2.org/msys/x86_64/libssh-0.9.6-1-x86_64.pkg.tar.zst &&
+            tar xvf /tmp/libssh.tar.zst usr/bin/msys-ssh-4.dll
+          ) &&
 
           # restrict SSH access to the "actor", i.e. the GitHub user who triggered this workflow
           # this requires calling `ssh -i <private-key> [...]` later on
