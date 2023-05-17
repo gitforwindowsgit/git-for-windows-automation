@@ -16,10 +16,10 @@ inputs:
     required: true
   rev:
     description: 'The target commit'
-    required: true
+    required: false
   check-run-name:
     description: 'The name of the Check Run'
-    required: true
+    required: false
   title:
     description: 'The title of the Check Run'
   summary:
