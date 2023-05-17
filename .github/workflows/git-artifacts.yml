@@ -275,6 +275,8 @@ jobs:
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ env.OWNER }}
+          repo: ${{ env.REPO }}
           append-text: 'About to build the `${{env.MINGW_PACKAGE_PREFIX}}-git` package'
       - name: Build ${{env.MINGW_PACKAGE_PREFIX}}-git
         if: steps.restore-cached-git-pkg.outputs.cache-hit != 'true'
@@ -325,6 +327,8 @@ jobs:
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ env.OWNER }}
+          repo: ${{ env.REPO }}
           append-text: 'The `${{env.MINGW_PACKAGE_PREFIX}}-git` package was built successfully'
       - name: Publish ${{env.MINGW_PACKAGE_PREFIX}}-git
         uses: actions/upload-artifact@v3
@@ -341,6 +345,8 @@ jobs:
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ env.OWNER }}
+          repo: ${{ env.REPO }}
           append-text: "${{ format('Completed: {0}', job.status) }}."
           conclusion: ${{ job.status }}
   artifacts:
@@ -468,6 +474,8 @@ jobs:
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ env.OWNER }}
+          repo: ${{ env.REPO }}
           append-text: 'Built ${{ matrix.artifact.name }}'
       - name: update check-run if failed or canceled
         if: needs.pkg.outputs.check-run-state != '' && (failure() || cancelled())
@@ -475,6 +483,8 @@ jobs:
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ env.OWNER }}
+          repo: ${{ env.REPO }}
           append-text: "${{ format('Completed: {0}', job.status) }}."
           conclusion: ${{ job.status }}
   sha256sums:
@@ -509,5 +519,7 @@ jobs:
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ env.OWNER }}
+          repo: ${{ env.REPO }}
           append-text: "${{ job.status == 'success' && 'Done!' || format('Completed: {0}', job.status) }}."
           conclusion: ${{ job.status }}

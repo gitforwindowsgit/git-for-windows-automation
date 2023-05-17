@@ -96,6 +96,8 @@ jobs:
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ env.OWNER }}
+          repo: ${{ env.REPO }}
           title: "Tag Git ${{ steps.generate.outputs.tag-name }} @${{ env.REV }}"
           summary: "Tag Git ${{ steps.generate.outputs.tag-name }} @${{ env.REV }}"
           append-text: 'Tagged Git ${{ steps.generate.outputs.tag-name }}'
@@ -110,5 +112,7 @@ jobs:
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ env.OWNER }}
+          repo: ${{ env.REPO }}
           append-text: "${{ job.status == 'success' && 'Done!' || format('Completed: {0}', job.status) }}."
           conclusion: ${{ job.status }}
