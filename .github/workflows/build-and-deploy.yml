@@ -173,6 +173,28 @@ jobs:
             exit 1
           done
 
+      - name: Run tmate
+        shell: bash
+        run: |
+          # install tmate
+          pacman -Sy --noconfirm tmate openssh &&
+
+          # restrict SSH access to the "actor", i.e. the GitHub user who triggered this workflow
+          # this requires calling `ssh -i <private-key> [...]` later on
+          mkdir -p ~/.ssh &&
+          echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDSXs87cLXHuXPXjPTyb3HTDizuD07CytsUgjXazbkfzD7/EZF5g6cRWnc+gbqApQCzGSbLXxCd+AV/UxyS62v34kO/k5olz6DF6aMURbvFqrB9v0px86T0ScYjehUf5NYzGixIIghW3Pdxqi6s8BRuNuUjTGsNDzlMLA8N9pK1TOBZglsRlBUdtg7zeXBN/gkS7tf44eAw7gxMNfhrb1ackEveeu7PDUEvkoHSfMFITBgd8z4PonoxZjWrijoQXxXKuD1GtWrvfev1yc6hGnLlRK8HCnnq87eYUd5iUVO2yWNBhVkySJMp66UuHKne7uROXslIhUT98cgDU04T/ZpZ2qwQqpsl0ohDC8rqiLSeAFNZQZdjwVAXtH+FIQLT8fyHaU8HsHD4exMPUHSaKIRL0kBbPS8Wxj1qh/F3lNPPtIxEmlbpVN56xSUkFGqBJRET4FIH+UpDiQE7nsaD4rl3iys7Aj0B2gFMttOOvq8J/dFOMqX+NEyiMAHVsFT0SBnKZfk5J96kWOANbJa753QC/01G8wiMKTU6M87Ziv3mB/FqIu97+78TYhEzdAOr3V7NZp/ccx6LoD7zvcDkKCaWD9PxPX2hcv70fZ/WsZ6wrkVEmBHs3vJ7lM+caTR8ndjt9wC5ceRfI1s55wZ8AZ9PJ2PVxpm9ZYDsgsiQXIwAFQ== virtualbox@virtualbox' >~/.ssh/authorized_keys &&
+
+          # Generate an SSH key (needed for tmate)
+          echo -e 'y\n' | ssh-keygen -q -t rsa -N '' -f ~/.ssh/id_rsa &&
+
+          # Start tmate session
+          export CHERE_INVOKING=1 &&
+          tmate -S /tmp/tmate.sock -a ~/.ssh/authorized_keys new-session -d &&
+          tmate -S /tmp/tmate.sock wait tmate-ready &&
+
+          # Print SSH invocation and keep tmate running
+          tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}'
+
       - name: Prepare home directory for GPG signing
         if: env.GPGKEY != ''
         shell: bash
@@ -307,3 +329,14 @@ jobs:
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           append-text: "${{ job.status == 'success' && 'Done!' || format('Completed: {0}', job.status) }}."
           conclusion: ${{ job.status }}
+
+      - name: wait for tmate to be done
+        if: always()
+        shell: bash
+        run: |
+          PATH=$HOME/bin:$PATH
+          while test -e /tmp/tmate.sock
+          do
+            tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}'
+            sleep 5
+          done
