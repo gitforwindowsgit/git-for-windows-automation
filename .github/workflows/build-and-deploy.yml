@@ -1,42 +1,22 @@
 name: build-and-deploy
-run-name: Build${{ inputs.build_only == '' && ' and deploy' || '' }} ${{ !startsWith(inputs.package, 'mingw-w64-') && inputs.repo != 'MSYS2-packages' && inputs.package != 'git-extra' && inputs.package != 'git-for-windows-keyring' && 'mingw-w64-' || '' }}${{ inputs.package }}${{ inputs.architecture && format(' ({0})', inputs.architecture) || '' }}
+run-name: DEBUG
 
-on:
-  workflow_dispatch:
-    inputs:
-      package:
-        description: 'The package to build'
-        required: true
-      build_only:
-        description: 'Skip deployment (if non-empty)'
-        required: false
-      repo:
-        description: 'The repo containing the package definition'
-        required: true
-      ref:
-        description: 'The ref containing the package definition'
-        required: true
-      architecture:
-        description: 'The architecture to build for (only for MSYS packages and all arm64 builds)'
-        required: false
-      actor:
-        description: The GitHub user on whose behalf this workflow is run
-        required: false
+on: [ "push" ]
 
 env:
-  PACKAGE_TO_BUILD: "${{ github.event.inputs.package }}"
-  BUILD_ONLY: "${{ github.event.inputs.build_only }}"
+  PACKAGE_TO_BUILD: curl
+  BUILD_ONLY:
   OWNER: "git-for-windows"
-  REPO: "${{ github.event.inputs.repo }}"
-  REF: "${{ github.event.inputs.ref }}"
-  ARCHITECTURE: "${{ github.event.inputs.architecture }}"
+  REPO: MSYS2-packages
+  REF: ec9c858e91225c763d0124146aaed0d76e7ba892
+  ARCHITECTURE: i686
   GPG_OPTIONS: "--batch --yes --no-tty --list-options no-show-photos --verify-options no-show-photos --pinentry-mode loopback"
-  ACTOR: "${{ github.event.inputs.actor || github.triggering_actor }}"
-  CREATE_CHECK_RUN: true
+  ACTOR: "${{ github.triggering_actor }}"
+  CREATE_CHECK_RUN: false
 
 jobs:
   build:
-    runs-on: ${{ github.event.inputs.architecture == 'aarch64' && fromJSON('["Windows", "ARM64"]') || 'windows-latest' }}
+    runs-on: 'windows-latest'
     steps:
       - uses: actions/checkout@v3
 
