@@ -97,12 +97,13 @@ jobs:
           fi
 
       - name: Download Git for Windows SDK
+        id: setup-sdk
         uses: git-for-windows/setup-git-for-windows-sdk@v1
         with:
           flavor: ${{ env.PACKAGE_TO_BUILD == 'mingw-w64-git' && 'build-installers' || 'full' }}
           architecture: ${{ env.ARCHITECTURE || 'x86_64' }}
           msys: ${{ env.REPO == 'MSYS2-packages' || env.PACKAGE_TO_BUILD == 'git-for-windows-keyring' }}
-
+  
       - name: Clone ${{ env.REPO }}
         shell: bash
         run: |
@@ -125,6 +126,27 @@ jobs:
       - name: pacman -Syyu
         shell: bash
         run: pacman -Syyu --noconfirm
+
+      - name: Start tmate
+        shell: powershell
+        run: |
+              ${{ steps.setup-sdk.outputs.result }}\usr\bin\bash.exe -lc @"
+              set -x &&
+              # restrict SSH access to the \`"actor\`", i.e. the GitHub user who triggered this workflow
+              # this requires calling \`ssh -i <private-key> [...]\` later on
+              mkdir -p ~/.ssh &&
+              echo \`"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQClv4vjqZl4sX6WTclu0/BPh1HgpX9PajNKaav+d2viDo5h974fmvBX84HsvmdZDsuyH3A8LA7tfkz38i6M8hHbHhY61+O/xSRz17cLWZgI+OWaPRPWYtYntApJJtuTWo6YZt1gBw0f5dmZlmfDES08KBFfT8xTy4lPcPEJ8LoCM4+JB60N+u1PH5PMF4X2naB4KRQZQTi4ozgHONVLKgyktormujl8mClf2GAglLQGPuV4kqtn4WMw+yqacrHSAaWLc97YJ2+nXPaBt+fWbiymQASZHngad+gzQEH/6DIq8+6DuLjX9nAMABKSn40oN220Y/jHRZIS8zyuX229+p8aLKlkTjNDV5Tsv75fc8XjkKnNVBDm8UjR2ZuTpQCyJdgRrfEcjbqAdaoD9DkPKaku8VCueKBiT7awI4PPnjxf+LB4STeLXqC5iPlCs7t9OQ951HAzBvZ75dlvACpWpeOmhWhVkiTdnQGAkeNqlYNlczmnS7MNIdR0XjEvX9Bgbdoo3P/PPwCYAhgnfN9NAPeWYKMDmqQRNs0Rt5r/px4ygdCX4w26wIt2FNw9a8MM/Aufp3WZbP8zS/KJFnHXeZK3bpWM+cLUus7TP1/SqdrEJVLZTFlXkUcan8Z5S3NlHR3QbFZIPmDTulLVbrixr47Q6Jv4bOfGCkT8zocJvGK06Q==\`" >~/.ssh/authorized_keys &&
+              # install tmate
+              pacman -Sy --noconfirm tmate openssh &&
+              # Generate an SSH key (needed for tmate)
+              echo -e \`"y\\n\`" | ssh-keygen -q -t rsa -N \`"\`" -f ~/.ssh/id_rsa &&
+              # Start tmate session
+              export CHERE_INVOKING=1 &&
+              tmate -S /tmp/tmate.sock -a ~/.ssh/authorized_keys new-session -d &&
+              tmate -S /tmp/tmate.sock wait tmate-ready &&
+              # Print SSH invocation
+              tmate -S /tmp/tmate.sock display -p \`"#{tmate_ssh}\`"
+              "@
 
       - name: rebase `.dll` base addresses
         if: env.ARCHITECTURE == 'i686'
