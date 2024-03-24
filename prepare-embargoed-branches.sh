@@ -44,6 +44,7 @@ handle_repo () {
 	if test -e "$path/.git"
 	then
 		git_dir="$path/.git"
+		main_refspec="refs/remotes/origin/main:refs/heads/main"
 	else
 		# To allow for running this script on Linux/macOS, fall back to cloning to pwd
 		git_dir=${path##*/}.git &&
@@ -53,6 +54,7 @@ handle_repo () {
 			git clone --bare --filter=blob:none \
 				https://github.com/git-for-windows/$name "$git_dir"
 		fi
+		main_refspec="refs/heads/main:refs/heads/main"
 	fi &&
 
 	# ensure that the `embargoed-git-for-windows-builds` remote is set
@@ -75,7 +77,7 @@ handle_repo () {
 			die "No matching revision for $args in $name"
 		fi &&
 		echo "Creating $branch_name in $name @$revision" &&
-		push_ref_spec="$revision:refs/heads/$branch_name refs/remotes/origin/main:refs/heads/main" &&
+		push_ref_spec="$revision:refs/heads/$branch_name $main_refspec" &&
 		if test -n "$dry_run"
 		then
 			git --git-dir "$git_dir" show -s "$revision" &&
