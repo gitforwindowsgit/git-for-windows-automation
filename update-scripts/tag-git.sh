@@ -8,29 +8,39 @@ die () {
 git_git_dir=/usr/src/git/.git &&
 build_extra_dir=/usr/src/build-extra &&
 artifacts_dir= &&
+release_branch=main &&
+git_or_mingit="Git for Windows" &&
 snapshot_version=t &&
+release_date= &&
 while case "$1" in
 --git-dir=*) git_git_dir="${1#*=}";;
 --build-extra-dir=*) build_extra_dir="${1#*=}";;
 --artifacts-dir=*) artifacts_dir="${1#*=}";;
+--release-branch=*) release_branch="${1#*=}";;
+--mingit) git_or_mingit="MinGit for Windows";;
 --full|--full-version|--no-snapshot|--no-snapshot-version) snapshot_version=;;
+--release-date=*) release_date="${1#*=}";;
 *) break;;
-esac; do shift; done
+esac; do shift; done ||
+die "Could not parse command-line options: $*"
 
 test $# = 1 ||
 die "Usage: $0 [--no-snapshot-version] [--git-dir=<dir>] [--build-extra-dir=<dir>] [--artifacts-dir=<dir>] <git-rev>"
 
 git_rev="$1"
 
-test "refs/heads/main" = "$(git -C "$build_extra_dir" symbolic-ref HEAD)" ||
-die "Need the current branch in '$build_extra_dir' to be 'main'"
+test "refs/heads/$release_branch" = "$(git -C "$build_extra_dir" symbolic-ref HEAD)" ||
+die "Need the current branch in '$build_extra_dir' to be '$release_branch'"
 
 mkdir -p "$artifacts_dir" &&
 if test -n "$snapshot_version"
 then
-	tag_name="$(git -C "$git_git_dir" describe --match 'v[0-9]*' --exclude='*-[0-9]*' "$git_rev")-$(date +%Y%m%d%H%M%S)" &&
+	test -z "$release_date" ||
+	die 'Cannot specify --release-date with --no-snapshot-version'
+
+	tag_name="$(git --git-dir "$git_git_dir" describe --match 'v[0-9]*' --exclude='*-[0-9]*' "$git_rev")-$(date +%Y%m%d%H%M%S)" &&
 	tag_message="Snapshot build" &&
-	release_note="Snapshot of $(git -C "$git_git_dir" show -s --pretty='tformat:%h (%s, %ad)' --date=short "$git_rev")" &&
+	release_note="Snapshot of $(git --git-dir "$git_git_dir" show -s --pretty='tformat:%h (%s, %ad)' --date=short "$git_rev")" &&
 	(cd "$build_extra_dir" && node ./add-release-note.js --commit feature "$release_note") &&
 	display_version=${tag_name#v} &&
 	ver=prerelease-${tag_name#v}
@@ -40,7 +50,7 @@ else
 		die "Need 'w3m' to render release notes"
 	fi
 
-	desc="$(git -C "$git_git_dir" describe --match 'v[0-9]*[0-9]' --exclude='*-[0-9]*' --first-parent "$git_rev")" &&
+	desc="$(git --git-dir "$git_git_dir" describe --match 'v[0-9]*[0-9]' --exclude='*-[0-9]*' --exclude='*.windows.*' "$git_rev")" &&
 	base_tag=${desc%%-[1-9]*} &&
 	case "$base_tag" in
 	"$desc") die "Revision '$git_rev' already tagged as $base_tag";;
@@ -65,11 +75,14 @@ else
 	ver="$(echo "${tag_name#v}" | sed -n \
 		's/^\([0-9]*\.[0-9]*\.[0-9]*\(-rc[0-9]*\)\?\)\.windows\(\.1\|\(\.[0-9]*\)\)$/\1\4/p')" &&
 
-	release_date="$(LC_ALL=C date +"%B %-d %Y" |
-		sed -e 's/\( [2-9]\?[4-90]\| 1[0-9]\) /\1th /' \
-			-e 's/1 /1st /' -e 's/2 /2nd /' -e 's/3 /3rd /'
-	)" &&
-	sed -i -e "1s/.*/# Git for Windows v$display_version Release Notes/" \
+	if test -z "$release_date"
+	then
+		release_date="$(LC_ALL=C date +"%B %-d %Y" |
+			sed -e 's/\( [2-9]\?[4-90]\| 1[0-9]\) /\1th /' \
+				-e 's/1 /1st /' -e 's/2 /2nd /' -e 's/3 /3rd /'
+		)"
+	fi &&
+	sed -i -e "1s/.*/# $git_or_mingit v$display_version Release Notes/" \
 		-e "2s/.*/Latest update: $release_date/" \
 		"$build_extra_dir"/ReleaseNotes.md &&
 	git -C "$build_extra_dir" commit -s \
@@ -78,10 +91,11 @@ else
 	raw_notes="$(sed -n "/^## Changes since/,\${:1;p;n;/^## Changes/q;b1}" \
 			<"$build_extra_dir"/ReleaseNotes.md)" &&
 	notes="$(echo "$raw_notes" |
+		sed '1s/^## Changes since.*/&:/' |
 		markdown |
 		LC_CTYPE=C w3m -dump -cols 72 -T text/html)" &&
 	tag_message="$(printf "%s\n\n%s" \
-		"$(sed -n '1s/.*\(Git for Windows v[^ ]*\).*/\1/p' \
+		"$(sed -n '1s/.* \(\(Min\)\?Git for Windows v[^ ]*\).*/\1/p' \
 		<"$build_extra_dir"/ReleaseNotes.md)" "$notes")" &&
 
 	cat >"$artifacts_dir"/release-notes-$display_version <<-EOF &&
@@ -92,11 +106,11 @@ else
 	@@CHECKSUMS@@
 	EOF
 
-	case "$display_version" in
-	prerelease-*)
+	case "$git_or_mingit,$display_version" in
+	*,prerelease-*)
 		url=https://wingit.blob.core.windows.net/files/index.html
 		;;
-	*-rc*)
+	*,*-rc*|MinGit*)
 		url=https://github.com/git-for-windows/git/releases/tag/$tag_name
 		;;
 	*)
@@ -108,7 +122,7 @@ else
 	From: $(git var GIT_COMMITTER_IDENT | sed -e 's/>.*/>/')
 	Date: $(date -R)
 	To: git-for-windows@googlegroups.com, git@vger.kernel.org, git-packagers@googlegroups.com
-	Subject: [ANNOUNCE] Git for Windows $display_version
+	Subject: [ANNOUNCE] $git_or_mingit $display_version
 	Content-Type: text/plain; charset=UTF-8
 	Content-Transfer-Encoding: 8bit
 	MIME-Version: 1.0
@@ -116,7 +130,7 @@ else
 
 	Dear Git users,
 
-	I hereby announce that Git for Windows $display_version is available from:
+	I hereby announce that $git_or_mingit $display_version is available from:
 
 	    $url
 
@@ -133,9 +147,9 @@ echo "$ver" >"$artifacts_dir"/ver &&
 echo "$display_version" >"$artifacts_dir"/display_version &&
 echo "$tag_name" >"$artifacts_dir"/next_version &&
 echo "$tag_message" >"$artifacts_dir"/tag-message &&
-git -C "$git_git_dir" rev-parse --verify "$git_rev"^0 >"$artifacts_dir"/git-commit-oid &&
+git --git-dir "$git_git_dir" rev-parse --verify "$git_rev"^0 >"$artifacts_dir"/git-commit-oid &&
 
-git -C "$git_git_dir" tag $(test -z "$GPGKEY" || echo " -s") -m "$tag_message" "$tag_name" "$git_rev" &&
-git -C "$git_git_dir" bundle create "$artifacts_dir"/git.bundle origin/main.."$tag_name" &&
+git --git-dir "$git_git_dir" tag $(test -z "$GPGKEY" || echo " -s") -m "$tag_message" "$tag_name" "$git_rev" &&
+git --git-dir "$git_git_dir" bundle create "$artifacts_dir"/git.bundle origin/$release_branch.."$tag_name" &&
 
-git -C "$build_extra_dir" bundle create "$artifacts_dir"/build-extra.bundle origin/main..main
+git -C "$build_extra_dir" bundle create "$artifacts_dir"/build-extra.bundle origin/$release_branch..$release_branch
