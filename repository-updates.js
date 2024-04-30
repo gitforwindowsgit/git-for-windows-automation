@@ -2,8 +2,10 @@ const callProg = (prog, parameters, cwd) => {
   const { spawnSync } = require('child_process')
   const child = spawnSync(prog, parameters, {
     stdio: ['ignore', 'pipe', 'inherit'],
+    env: { ...process.env, GIT_TRACE: '1' },
     cwd
   })
+  if (child.stderr) console.error(child.stderr.toString('utf-8'))
   if (child.error) throw child.error
   if (child.status !== 0) throw new Error(`${prog} ${parameters.join(' ')} failed with status ${child.status}`)
   return child.stdout.toString('utf-8').replace(/\r?\n$/, '')
