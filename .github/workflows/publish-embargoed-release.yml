@@ -3,11 +3,8 @@ name: Release Git for Windows
 on:
   workflow_dispatch:
     inputs:
-      git_artifacts_i686_workflow_run_id:
-        description: 'ID of the git-artifacts (i686) workflow run'
-        required: true
-      git_artifacts_x86_64_workflow_run_id:
-        description: 'ID of the git-artifacts (x86_64) workflow run'
+      git-version:
+        description: 'The version of Git to release'
         required: true
 
 env:
@@ -15,13 +12,11 @@ env:
   USERPROFILE: "${{github.workspace}}\\home"
   OWNER: git-for-windows
   REPO: git
-  I686_WORKFLOW_RUN_ID: "${{github.event.inputs.git_artifacts_i686_workflow_run_id}}"
-  X86_64_WORKFLOW_RUN_ID: "${{github.event.inputs.git_artifacts_x86_64_workflow_run_id}}"
+  GIT_VERSION: ${{github.event.inputs.git-version}}
 
 jobs:
   setup:
     runs-on: ubuntu-latest
-    if: github.event.repository.owner.login == 'git-for-windows'
     outputs:
       display-version: ${{ steps.bundle-artifacts.outputs.display-version }}
       tag-name: ${{ steps.bundle-artifacts.outputs.tag-name }}
@@ -80,14 +75,13 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const { downloadBundleArtifacts } = require('./github-release')
-            const result = await downloadBundleArtifacts(
+            const { downloadBundleArtifactsFromRelease } = require('./github-release')
+            const result = await downloadBundleArtifactsFromRelease(
               console,
               '${{ secrets.GITHUB_TOKEN }}',
               context.repo.owner,
               context.repo.repo,
-              process.env.I686_WORKFLOW_RUN_ID,
-              process.env.X86_64_WORKFLOW_RUN_ID
+              process.env.GIT_VERSION
             )
 
             core.setOutput('display-version', result.displayVersion)
