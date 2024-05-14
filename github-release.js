@@ -107,17 +107,7 @@ const artifactName2Rank = (name) => {
   return rank
 }
 
-const downloadBundleArtifacts = async (context, token, owner, repo, git_artifacts_i686_workflow_run_id, git_artifacts_x86_64_workflow_run_id) => {
-  for (const architecture of architectures) {
-    const workflowRunId = {
-      x86_64: git_artifacts_x86_64_workflow_run_id,
-      i686: git_artifacts_i686_workflow_run_id
-    }[architecture.name]
-    const downloadURLs = await getWorkflowRunArtifactsURLs(context, token, owner, repo, workflowRunId)
-    if (architecture.name === 'x86_64') await downloadAndUnZip(token, downloadURLs['bundle-artifacts'], 'bundle-artifacts')
-    await downloadAndUnZip(token, downloadURLs['sha256sums'], `sha256sums-${architecture.name}`)
-  }
-
+const processBundleArtifacts = () => {
   const fs = require('fs')
 
   const result = {
@@ -171,6 +161,20 @@ const downloadBundleArtifacts = async (context, token, owner, repo, git_artifact
   fs.writeFileSync(`bundle-artifacts/release-notes-${result.ver}`, result.releaseNotes)
 
   return result
+}
+
+const downloadBundleArtifacts = async (context, token, owner, repo, git_artifacts_i686_workflow_run_id, git_artifacts_x86_64_workflow_run_id) => {
+  for (const architecture of architectures) {
+    const workflowRunId = {
+      x86_64: git_artifacts_x86_64_workflow_run_id,
+      i686: git_artifacts_i686_workflow_run_id
+    }[architecture.name]
+    const downloadURLs = await getWorkflowRunArtifactsURLs(context, token, owner, repo, workflowRunId)
+    if (architecture.name === 'x86_64') await downloadAndUnZip(token, downloadURLs['bundle-artifacts'], 'bundle-artifacts')
+    await downloadAndUnZip(token, downloadURLs['sha256sums'], `sha256sums-${architecture.name}`)
+  }
+
+  return processBundleArtifacts()
 }
 
 const getGitArtifacts = async (context, token, owner, repo, git_artifacts_i686_workflow_run_id, git_artifacts_x86_64_workflow_run_id) => {
@@ -288,6 +292,7 @@ module.exports = {
   getTempFile,
   downloadAndUnZip,
   downloadBundleArtifacts,
+  processBundleArtifacts,
   getGitArtifacts,
   sha256sumsFromReleaseNotes,
   calculateSHA256ForFile,
