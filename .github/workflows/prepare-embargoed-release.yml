@@ -69,9 +69,6 @@ jobs:
         with:
           result-encoding: string
           script: |
-            // TODO: update `pushRepositoryUpdate()` to allow for `/prepare-embargoed-git` and `/publish-embargoed-git`
-            // TODO: merge `/publish-embargoed-git` into `/release`...
-            // TODO: update the repository-updates to pick up the release branches and push those as updates instead of the bundles
             const { unzip } = require('./github-release')
             await unzip(`bundle-artifacts-x86_64.zip`, `bundle-artifacts`)
             const fs = require('fs')
@@ -155,6 +152,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            // TODO: also draft releases in `git-for-windows/git`, but do _not_ push the tag there yet!
             const {
               createRelease,
               uploadGitArtifacts,
